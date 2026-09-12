@@ -8,6 +8,7 @@ const jsonResponse = (body: unknown) => Promise.resolve(new Response(JSON.string
   status: 200,
   headers: { 'content-type': 'application/json' },
 }));
+const unavailable = () => Promise.resolve(new Response('not found', { status: 404 }));
 
 describe('Light dashboard API contract', () => {
   beforeEach(() => {
@@ -58,5 +59,17 @@ describe('Light dashboard API contract', () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(5));
     fireEvent.click(screen.getByRole('button', { name: new RegExp(tab, 'i') }));
     for (const value of expected) expect(await screen.findByText(value)).toBeInTheDocument();
+  });
+
+  it('falls back to browser-local model configuration when the admin API is unavailable', async () => {
+    vi.mocked(fetch).mockImplementation(unavailable);
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: /models/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /add model/i }));
+    fireEvent.change(screen.getByLabelText(/model name/i), { target: { value: 'Local Placeholder' } });
+    fireEvent.change(screen.getByLabelText(/future model id/i), { target: { value: 'local-placeholder' } });
+    fireEvent.click(screen.getByRole('button', { name: /create model/i }));
+    expect(await screen.findByText('Local Placeholder')).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('light.config') ?? '{}').models).toHaveLength(1);
   });
 });

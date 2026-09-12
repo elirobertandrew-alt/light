@@ -8,6 +8,32 @@ const endpoints: Record<Tab, string> = {
   Routing: '/admin/routes', Limits: '/admin/limits', 'API Keys': '/admin/keys',
 }
 const overviewEndpoints = ['logs', 'providers', 'routes', 'limits', 'keys'] as const
+const staticMode = import.meta.env.VITE_STATIC_MODE === 'true'
+const localConfigKey = 'light.config'
+
+function localRequest(url: string, init?: RequestInit) {
+  const match = /^\/admin\/(providers|models|routes|limits|keys|logs)(?:\/([^/]+))?$/.exec(url)
+  if (!match) throw new Error('Unsupported local operation')
+  const [, collection, id] = match
+  const config = JSON.parse(localStorage.getItem(localConfigKey) ?? '{}') as Record<string, AnyRecord[]>
+  const rows = config[collection] ?? []
+  const method = init?.method ?? 'GET'
+  if (method === 'GET') return id ? rows.find(row => row.id === id) ?? null : rows
+  if (method === 'DELETE') config[collection] = rows.filter(row => row.id !== id)
+  else {
+    const body = init?.body ? JSON.parse(String(init.body)) : {}
+    if (method === 'POST') {
+      const created = { ...body, id: crypto.randomUUID(), createdAt: new Date().toISOString() }
+      config[collection] = [...rows, created]
+      localStorage.setItem(localConfigKey, JSON.stringify(config))
+      return created
+    }
+    const updated = rows.map(row => row.id === id ? { ...row, ...body } : row)
+    config[collection] = updated
+  }
+  localStorage.setItem(localConfigKey, JSON.stringify(config))
+  return null
+}
 
 function list(value: any): AnyRecord[] {
   if (Array.isArray(value)) return value
@@ -29,7 +55,7 @@ function time(value: any) {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('Overview')
-  const [token, setToken] = useState(() => sessionStorage.getItem('light.adminToken') ?? '')
+  const [token, setToken] = useState(() => staticMode ? 'browser-local' : sessionStorage.getItem('light.adminToken') ?? '')
   const [draft, setDraft] = useState(token)
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(false)
@@ -38,10 +64,15 @@ export default function App() {
   const [revealed, setRevealed] = useState('')
 
   const request = useCallback(async (url: string, init?: RequestInit) => {
+    if (staticMode) return localRequest(url, init)
     const response = await fetch(url, { ...init, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}`, 'X-Admin-Token': token } : {}), ...init?.headers } })
     const text = await response.text()
-    const body = text ? JSON.parse(text) : null
-    if (!response.ok) throw new Error(body?.message || body?.error || `${response.status} ${response.statusText}`)
+    let body: any = null
+    try { body = text ? JSON.parse(text) : null } catch { body = null }
+    if (!response.ok) {
+      if (response.status === 404) return localRequest(url, init)
+      throw new Error(body?.message || body?.error || `${response.status} ${response.statusText}`)
+    }
     return body
   }, [token])
 
@@ -67,15 +98,15 @@ export default function App() {
   function signOut() { sessionStorage.removeItem('light.adminToken'); setToken(''); setDraft(''); setData(null) }
 
   if (!token) return <main className="login-shell"><section className="login-card">
-    <div className="brand-mark">RF</div><p className="eyebrow">Light Control Plane</p><h1>Admin access</h1>
+    <div className="brand-mark">L</div><p className="eyebrow">Light Control Plane</p><h1>Admin access</h1>
     <p className="muted">Enter your admin token. It stays in this browser tab and is cleared when the session ends.</p>
     <form onSubmit={signIn}><label>Admin token<input autoFocus type="password" value={draft} onChange={e => setDraft(e.target.value)} placeholder="Paste token" /></label><button disabled={!draft.trim()}>Open dashboard</button></form>
   </section></main>
 
   return <div className="app-shell">
-    <aside><div className="brand"><span className="brand-mark small">RF</span><span><b>Light</b><small>Admin console</small></span></div>
+    <aside><div className="brand"><span className="brand-mark small">L</span><span><b>Light</b><small>Model control</small></span></div>
       <nav>{tabs.map(item => <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}><span>{icons[item]}</span>{item}</button>)}</nav>
-      <div className="sidebar-foot"><span className="live-dot"/> Connected <button className="link" onClick={signOut}>Sign out</button></div>
+      <div className="sidebar-foot"><span className="live-dot"/> {staticMode ? 'Browser local' : 'Connected'} {!staticMode && <button className="link" onClick={signOut}>Sign out</button>}</div>
     </aside>
     <main className="workspace"><header><div><p className="eyebrow">Operations</p><h1>{tab}</h1></div><button className="secondary" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : '↻ Refresh'}</button></header>
       {error ? <div className="notice error"><b>Couldn’t load {tab.toLowerCase()}</b><span>{error}</span><button onClick={load}>Retry</button></div> : null}
