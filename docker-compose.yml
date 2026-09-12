@@ -1,0 +1,27 @@
+services:
+  light:
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+      LIGHT_DB: /app/data/light.db
+      LIGHT_ADMIN_TOKEN_FILE: /app/data/admin-token.txt
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - light-data:/app/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8787/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  light-data:
