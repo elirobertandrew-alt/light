@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "recipe": {
+    "name": "Light",
+    "kind": "node",
+    "bootstrap": [
+      "npm install"
+    ],
+    "build": [
+      "npm run build",
+      "npm run typecheck"
+    ],
+    "test": [
+      "npm run test",
+      "npm run lint"
+    ],
+    "start": "PORT=8799 LIGHT_DB=:memory: npm run dev",
+    "port": 8799,
+    "readinessPath": "/healthz",
+    "evidence": [
+      "npm run dev starts the Fastify control plane (src/server-main.ts), not a Vite dev server, so the auto-detected Vite port 5173 never answers.",
+      "Server defaults to PORT 8787; verification pins 8799 so a running dev server or an unrelated process on 8787 cannot collide with it.",
+      "LIGHT_DB=:memory: keeps the verification run from touching data/light.db.",
+      "/healthz is the only unauthenticated endpoint; / is not routed and every /v1 and /admin path returns 401 by design."
+    ]
+  }
+}
