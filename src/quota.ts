@@ -111,13 +111,10 @@ function zonedFields(at: number, timeZone: string) {
 }
 
 /** UTC instant of a local wall-clock time in `timeZone`, correcting across DST. */
-function instantFromZoned(
-  y: number, mo: number, d: number, h: number, timeZone: string,
-): number {
+function instantFromZoned(y: number, mo: number, d: number, h: number, timeZone: string): number {
   const naive = Date.UTC(y, mo, d, h, 0, 0);
-  const first = naive - zoneOffsetMs(naive, timeZone);
-  const second = naive - zoneOffsetMs(first, timeZone);
-  return second;
+  const approx = naive - zoneOffsetMs(naive, timeZone);
+  return naive - zoneOffsetMs(approx, timeZone);
 }
 
 /** Start instant of the calendar window containing `now`. */
@@ -143,14 +140,14 @@ export function calendarWindowStart(window: CalendarWindow, now: number): number
 export function calendarWindowEnd(window: CalendarWindow, now: number): number {
   const timeZone = window.timeZone ?? 'UTC';
   const { year, month, day, hour } = zonedFields(now, timeZone);
-  const start = calendarWindowStart(window, now);
   switch (window.period) {
     case 'hour':
       return instantFromZoned(year, month, day, hour + 1, timeZone);
     case 'day':
       return instantFromZoned(year, month, day + 1, 0, timeZone);
     case 'week': {
-      const from = zonedFields(start, timeZone);
+      // Step from the window's own start, since `now` may sit days into it.
+      const from = zonedFields(calendarWindowStart(window, now), timeZone);
       return instantFromZoned(from.year, from.month, from.day + 7, 0, timeZone);
     }
     case 'month':

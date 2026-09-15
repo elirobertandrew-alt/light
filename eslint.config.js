@@ -5,7 +5,9 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist/**', 'dist-server/**', 'coverage/**', 'data/**', 'node_modules/**'] },
+  // health-manifest is a vendored sub-project with its own toolchain and bundle
+  // output; linting it here buries real errors under thousands of Metro globals.
+  { ignores: ['dist/**', 'dist-server/**', 'coverage/**', 'data/**', 'node_modules/**', 'health-manifest/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
