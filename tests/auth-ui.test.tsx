@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const auth = vi.hoisted(() => ({
   signUp: vi.fn(),
+  sendVerificationOtp: vi.fn(),
   verifyEmail: vi.fn(),
   signIn: vi.fn(),
   forgot: vi.fn(),
@@ -15,7 +16,11 @@ vi.mock('@neondatabase/neon-js/auth', () => ({
   createAuthClient: () => ({
     signUp: { email: auth.signUp },
     signIn: { email: auth.signIn },
-    emailOtp: { verifyEmail: auth.verifyEmail, resetPassword: auth.reset },
+    emailOtp: {
+      sendVerificationOtp: auth.sendVerificationOtp,
+      verifyEmail: auth.verifyEmail,
+      resetPassword: auth.reset,
+    },
     forgetPassword: { emailOtp: auth.forgot },
   }),
 }));
@@ -24,6 +29,7 @@ import AuthGate from '../web/AuthGate.js';
 
 beforeEach(() => {
   auth.signUp.mockResolvedValue({ data: { user: { id: '1' } }, error: null });
+  auth.sendVerificationOtp.mockResolvedValue({ data: { success: true }, error: null });
   auth.verifyEmail.mockResolvedValue({ data: { token: 'verified-session' }, error: null });
   auth.signIn.mockResolvedValue({ data: { token: 'signed-in-session' }, error: null });
   auth.forgot.mockResolvedValue({ data: { success: true }, error: null });
@@ -63,6 +69,27 @@ describe('Light account access', () => {
     fireEvent.click(screen.getByRole('button', { name: /verify and continue/i }));
     await vi.waitFor(() => expect(onAuthenticated).toHaveBeenCalledWith('verified-session'));
     expect(auth.verifyEmail).toHaveBeenCalledWith({ email: 'elijah@example.com', otp: '123456' });
+  });
+
+  it('resends a fresh verification code from the verification screen', async () => {
+    render(<AuthGate onAuthenticated={() => undefined} />);
+    await join();
+    fireEvent.click(screen.getByRole('button', { name: /send a new code/i }));
+    await vi.waitFor(() => expect(auth.sendVerificationOtp).toHaveBeenCalledWith({
+      email: 'elijah@example.com',
+      type: 'email-verification',
+    }));
+    expect(await screen.findByText(/new 6-digit code/i)).toBeInTheDocument();
+  });
+
+  it('explains that unverified accounts must use their email code', async () => {
+    auth.signIn.mockResolvedValueOnce({ data: null, error: { message: 'Email not verified' } });
+    render(<AuthGate onAuthenticated={() => undefined} />);
+    fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
+    fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: 'elijah@example.com' } });
+    fireEvent.change(screen.getByLabelText(/^password$/i), { target: { value: 'a secure password' } });
+    fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
+    expect(await screen.findByText(/verify your email before signing in/i)).toBeInTheDocument();
   });
 
   it('offers forgot password and resets with an emailed code', async () => {

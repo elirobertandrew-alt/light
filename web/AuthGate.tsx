@@ -10,6 +10,13 @@ function errorMessage(reason: unknown) {
   return 'Something went wrong.';
 }
 
+function signInErrorMessage(message: string | undefined) {
+  if (message?.toLowerCase().includes('not verified')) {
+    return 'Verify your email before signing in. Use the 6-digit code we sent, or send a new code.';
+  }
+  return message || 'Invalid email or password.';
+}
+
 export default function AuthGate({ onAuthenticated }: { onAuthenticated: (token: string) => void }) {
   const [screen, setScreen] = useState<Screen>('join');
   const [name, setName] = useState('');
@@ -42,7 +49,9 @@ export default function AuthGate({ onAuthenticated }: { onAuthenticated: (token:
       } else if (screen === 'verify') {
         finish(await authClient.emailOtp.verifyEmail({ email, otp: code }));
       } else if (screen === 'signin') {
-        finish(await authClient.signIn.email({ email, password }));
+        const result = await authClient.signIn.email({ email, password });
+        if (result.error) throw new Error(signInErrorMessage(result.error.message));
+        finish(result);
       } else if (screen === 'forgot') {
         const result = await authClient.forgetPassword.emailOtp({ email });
         if (result.error) throw new Error(result.error.message);
@@ -54,6 +63,25 @@ export default function AuthGate({ onAuthenticated }: { onAuthenticated: (token:
         const signIn = await authClient.signIn.email({ email, password });
         finish(signIn);
       }
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resendVerificationCode() {
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const result = await authClient.emailOtp.sendVerificationOtp({
+        email,
+        type: 'email-verification',
+      });
+      if (result.error) throw new Error(result.error.message);
+      setCode('');
+      setMessage(`We sent a new 6-digit code to ${email}.`);
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
@@ -102,6 +130,7 @@ export default function AuthGate({ onAuthenticated }: { onAuthenticated: (token:
           <button disabled={busy}>{busy ? 'Please wait…' : submitLabels[screen]}</button>
         </form>
         {screen === 'signin' && <button className="auth-link" type="button" onClick={() => switchTo('forgot')}>Forgot password?</button>}
+        {screen === 'verify' && <button className="auth-link" type="button" disabled={busy} onClick={resendVerificationCode}>Send a new code</button>}
         {(screen === 'verify' || screen === 'reset') && <button className="auth-link" type="button" onClick={() => switchTo(screen === 'verify' ? 'join' : 'forgot')}>Use another email</button>}
       </div>
     </section>
