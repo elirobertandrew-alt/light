@@ -82,14 +82,33 @@ describe('Light account access', () => {
     expect(await screen.findByText(/new 6-digit code/i)).toBeInTheDocument();
   });
 
-  it('explains that unverified accounts must use their email code', async () => {
+  it('sends a fresh code and opens verification when an existing account is unverified', async () => {
     auth.signIn.mockResolvedValueOnce({ data: null, error: { message: 'Email not verified' } });
     render(<AuthGate onAuthenticated={() => undefined} />);
     fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
-    fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: 'elijah@example.com' } });
+    fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: 'Elijah@Example.com' } });
     fireEvent.change(screen.getByLabelText(/^password$/i), { target: { value: 'a secure password' } });
     fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
-    expect(await screen.findByText(/verify your email before signing in/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/6-digit code/i)).toBeInTheDocument();
+    expect(auth.sendVerificationOtp).toHaveBeenCalledWith({
+      email: 'elijah@example.com',
+      type: 'email-verification',
+    });
+    expect(screen.getByText(/sent a new 6-digit code/i)).toBeInTheDocument();
+  });
+
+  it('signs an existing verified account in with its email and password', async () => {
+    const onAuthenticated = vi.fn();
+    render(<AuthGate onAuthenticated={onAuthenticated} />);
+    fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
+    fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: 'Elijah@Example.com' } });
+    fireEvent.change(screen.getByLabelText(/^password$/i), { target: { value: 'a secure password' } });
+    fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
+    await vi.waitFor(() => expect(onAuthenticated).toHaveBeenCalledWith('signed-in-session'));
+    expect(auth.signIn).toHaveBeenCalledWith({
+      email: 'elijah@example.com',
+      password: 'a secure password',
+    });
   });
 
   it('offers forgot password and resets with an emailed code', async () => {

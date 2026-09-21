@@ -37,30 +37,44 @@ export default function AuthGate({ onAuthenticated }: { onAuthenticated: (token:
 
   async function act(event: FormEvent) {
     event.preventDefault();
+    const normalizedEmail = email.trim().toLowerCase();
+    if (normalizedEmail !== email) setEmail(normalizedEmail);
     setBusy(true);
     setError('');
     setMessage('');
     try {
       if (screen === 'join') {
-        const result = await authClient.signUp.email({ name, email, password });
+        const result = await authClient.signUp.email({ name, email: normalizedEmail, password });
         if (result.error) throw new Error(result.error.message);
-        setMessage(`We emailed a randomized 6-digit code to ${email}.`);
+        setMessage(`We emailed a randomized 6-digit code to ${normalizedEmail}.`);
         setScreen('verify');
       } else if (screen === 'verify') {
-        finish(await authClient.emailOtp.verifyEmail({ email, otp: code }));
+        finish(await authClient.emailOtp.verifyEmail({ email: normalizedEmail, otp: code }));
       } else if (screen === 'signin') {
-        const result = await authClient.signIn.email({ email, password });
+        const result = await authClient.signIn.email({ email: normalizedEmail, password });
+        const signInError = result.error?.message;
+        if (signInError?.toLowerCase().includes('not verified')) {
+          const resend = await authClient.emailOtp.sendVerificationOtp({
+            email: normalizedEmail,
+            type: 'email-verification',
+          });
+          if (resend.error) throw new Error(signInErrorMessage(signInError));
+          setCode('');
+          setMessage(`We sent a new 6-digit code to ${normalizedEmail}.`);
+          setScreen('verify');
+          return;
+        }
         if (result.error) throw new Error(signInErrorMessage(result.error.message));
         finish(result);
       } else if (screen === 'forgot') {
-        const result = await authClient.forgetPassword.emailOtp({ email });
+        const result = await authClient.forgetPassword.emailOtp({ email: normalizedEmail });
         if (result.error) throw new Error(result.error.message);
         setMessage('If that account exists, a randomized 6-digit reset code is on its way.');
         setScreen('reset');
       } else {
-        const result = await authClient.emailOtp.resetPassword({ email, otp: code, password });
+        const result = await authClient.emailOtp.resetPassword({ email: normalizedEmail, otp: code, password });
         if (result.error) throw new Error(result.error.message);
-        const signIn = await authClient.signIn.email({ email, password });
+        const signIn = await authClient.signIn.email({ email: normalizedEmail, password });
         finish(signIn);
       }
     } catch (reason) {
@@ -71,17 +85,19 @@ export default function AuthGate({ onAuthenticated }: { onAuthenticated: (token:
   }
 
   async function resendVerificationCode() {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (normalizedEmail !== email) setEmail(normalizedEmail);
     setBusy(true);
     setError('');
     setMessage('');
     try {
       const result = await authClient.emailOtp.sendVerificationOtp({
-        email,
+        email: normalizedEmail,
         type: 'email-verification',
       });
       if (result.error) throw new Error(result.error.message);
       setCode('');
-      setMessage(`We sent a new 6-digit code to ${email}.`);
+      setMessage(`We sent a new 6-digit code to ${normalizedEmail}.`);
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
@@ -124,7 +140,7 @@ export default function AuthGate({ onAuthenticated }: { onAuthenticated: (token:
         {message && <p className="notice">{message}</p>}{error && <p className="notice error" role="alert">{error}</p>}
         <form className="auth-form" onSubmit={act}>
           {screen === 'join' && <label>Name<input value={name} onChange={event => setName(event.target.value)} autoComplete="name" minLength={2} required /></label>}
-          <label>Email<input type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" required disabled={screen === 'verify' || screen === 'reset'} /></label>
+          <label>Email<input type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" autoCapitalize="none" spellCheck={false} required disabled={screen === 'verify' || screen === 'reset'} /></label>
           {(screen === 'join' || screen === 'signin' || screen === 'reset') && <label>{screen === 'reset' ? 'New password' : 'Password'}<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete={screen === 'signin' ? 'current-password' : 'new-password'} minLength={8} required /></label>}
           {(screen === 'verify' || screen === 'reset') && <label>6-digit code<input aria-label="6-digit code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} required /></label>}
           <button disabled={busy}>{busy ? 'Please wait…' : submitLabels[screen]}</button>
